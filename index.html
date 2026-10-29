@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How Often a Given Temperature Occurs — Present vs. Warmer Climate</title>
+<style>
+  :root{
+    --bg:#f6f7f5; --panel:#ffffff; --ink:#1b2320; --muted:#5f6b66;
+    --line:#dfe3e0; --grid:#e8ebe8;
+    --present:#1f8a80; --future:#dfae2c;
+    --present-fill:rgba(31,138,128,.30); --future-fill:rgba(223,174,44,.40);
+    --accent:#b1452c; --cool:#2f6f9e;
+    --shadow:0 1px 2px rgba(20,30,25,.06),0 8px 24px rgba(20,30,25,.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#121715; --panel:#1a201d; --ink:#e9eeeb; --muted:#9aa8a2;
+      --line:#2a322e; --grid:#232b28;
+      --present:#3fb3a7; --future:#f0c34a;
+      --present-fill:rgba(63,179,167,.32); --future-fill:rgba(240,195,74,.38);
+      --accent:#f08c6a; --cool:#6fb0dd;
+      --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 28px rgba(0,0,0,.35);
+    }
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.5 ui-sans-serif,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
+    padding:28px 22px 44px;
+  }
+  .wrap{max-width:1080px;margin:0 auto}
+  header{margin-bottom:22px}
+  h1{font-size:23px;margin:0 0 6px;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:14px;max-width:72ch;margin:0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
+  .chart{padding:12px 8px 4px;margin-bottom:18px}
+  canvas{width:100%;height:420px;display:block}
+  .controls{display:grid;grid-template-columns:1fr 1fr;gap:26px;padding:20px 22px;margin-bottom:18px}
+  @media (max-width:720px){.controls{grid-template-columns:1fr}}
+  .ctl label{display:flex;justify-content:space-between;align-items:baseline;font-weight:600;font-size:13.5px;margin-bottom:9px}
+  .ctl .val{font-variant-numeric:tabular-nums;font-weight:700;font-size:15px}
+  .ctl .val.t{color:var(--accent)}
+  .ctl .val.s{color:var(--future)}
+  .ctl .hint{color:var(--muted);font-size:12.5px;margin-top:8px}
+  input[type=range]{width:100%;accent-color:var(--accent);height:22px}
+  #shift{accent-color:var(--future)}
+  .presets{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;align-items:center}
+  .presets button{
+    font:inherit;font-size:12.5px;padding:4px 10px;border-radius:999px;cursor:pointer;
+    border:1px solid var(--line);background:transparent;color:var(--muted);
+  }
+  .presets button:hover{color:var(--ink);border-color:var(--muted)}
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  @media (max-width:860px){.stats{grid-template-columns:1fr}}
+  .compare{margin-top:14px;padding:18px 22px 22px}
+  .cmp{display:flex;align-items:center;justify-content:center;gap:clamp(18px,7vw,84px);flex-wrap:wrap;margin-top:12px}
+  .cmp .side{text-align:center}
+  .cmp .sl{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:7px}
+  .cmp .sv{font-size:34px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .cmp .su{font-size:15px;color:var(--muted);margin-left:3px}
+  .cmp .arrow{font-size:24px;color:var(--muted);line-height:1;padding-top:14px}
+  .stat{padding:16px 18px}
+  .stat .k{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:8px}
+  .stat .v{font-size:25px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .stat .n{font-size:12.5px;color:var(--muted);margin-top:5px}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;vertical-align:1px}
+  footer{color:var(--muted);font-size:12.5px;margin-top:22px;max-width:78ch}
+  footer p{margin:0 0 8px}
+  code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--grid);padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>How often a <em>given</em> temperature occurs</h1>
+    <p class="sub">Not the chance of exceeding a threshold — the chance of a day landing <em>at</em> the target temperature. Warming makes hot values more common and cool values rarer, and the break-even point sits halfway between the two means.</p>
+  </header>
+
+  <div class="card chart"><canvas id="cv"></canvas></div>
+
+  <div class="card controls">
+    <div class="ctl">
+      <label for="target">Target temperature <span class="val t" id="targetVal">30.0 °C</span></label>
+      <input type="range" id="target" min="8" max="38" step="0.1" value="30">
+      <div class="hint">The specific temperature we're tracking. Slide it below the point where the two curves cross (halfway between the means) and the factor drops under 1 — those days become <em>less</em> common.</div>
+    </div>
+    <div class="ctl">
+      <label for="shift">Warming (distance between curves) <span class="val s" id="shiftVal">+2.00 °C</span></label>
+      <input type="range" id="shift" min="0" max="5" step="0.05" value="2">
+      <div class="hint">How far the future curve is shifted. Shape and width are unchanged — only the mean moves.</div>
+      <div class="presets">
+        <button data-shift="0">0 °C</button>
+        <button data-shift="1.5">+1.5 °C</button>
+        <button data-shift="2">+2 °C</button>
+        <button data-shift="3">+3 °C</button>
+        <button data-shift="4">+4 °C</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="card stat">
+      <div class="k"><span class="dot" style="background:var(--present)"></span>Present climate</div>
+      <div class="v" id="pPresent">—</div>
+      <div class="n" id="rPresent">—</div>
+    </div>
+    <div class="card stat">
+      <div class="k"><span class="dot" style="background:var(--future)"></span>Future climate</div>
+      <div class="v" id="pFuture">—</div>
+      <div class="n" id="rFuture">—</div>
+    </div>
+    <div class="card stat">
+      <div class="k" id="ratioK">More likely by</div>
+      <div class="v" id="ratio">—</div>
+      <div class="n" id="ratioNote">change in how often this temperature occurs</div>
+    </div>
+  </div>
+
+  <div class="card stat compare">
+    <div class="k">Time between events at <span id="cmpT">30.0 °C</span></div>
+    <div class="cmp">
+      <div class="side">
+        <div class="sl"><span class="dot" style="background:var(--present)"></span>Present climate</div>
+        <div><span class="sv" id="w0v" style="color:var(--present)">—</span><span class="su" id="w0u"></span></div>
+      </div>
+      <div class="arrow">&#10230;</div>
+      <div class="side">
+        <div class="sl"><span class="dot" style="background:var(--future)"></span>Future climate</div>
+        <div><span class="sv" id="w1v" style="color:var(--future)">—</span><span class="su" id="w1u"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <p>Both curves are normal distributions with a standard deviation of <span id="sdNote">3.0</span> °C; the present-day mean is <span id="muNote">20.0</span> °C.</p>
+    <p>A continuous distribution assigns zero probability to any exact value, so "at the target" means <em>within ±0.1 °C of it</em> — the narrow shaded slab, integrated by Simpson's rule. The likelihood <em>factor</em> is essentially independent of that band width: for a pure mean shift it equals <code>exp((2(T−μ)·Δ − Δ²) / 2σ²)</code>, which is why the number barely moves when you change the band.</p>
+  </footer>
+</div>
+
+<script>
+(function(){
+  const MU0 = 20.0;      // present-day mean temperature (°C)
+  const SD  = 3.0;       // standard deviation (°C), identical for both climates
+
+  document.getElementById('sdNote').textContent = SD.toFixed(1);
+  document.getElementById('muNote').textContent = MU0.toFixed(1);
+
+  const pdf = (x,mu)=>Math.exp(-0.5*Math.pow((x-mu)/SD,2))/(SD*Math.sqrt(2*Math.PI));
+
+  // Probability of landing within [a,b], by composite Simpson on the density.
+  // Avoids the cancellation you get subtracting two nearly-equal tail integrals.
+  function bandProb(a,b,mu){
+    const n = 40, h = (b-a)/n;
+    let s = pdf(a,mu) + pdf(b,mu);
+    for(let i=1;i<n;i++) s += (i%2 ? 4 : 2) * pdf(a+i*h, mu);
+    return s*h/3;
+  }
+
+  const SUP = {"-":"\u207b","+":"","0":"\u2070","1":"\u00b9","2":"\u00b2","3":"\u00b3",
+               "4":"\u2074","5":"\u2075","6":"\u2076","7":"\u2077","8":"\u2078","9":"\u2079"};
+  function sci(v, digits){
+    const [m,e] = v.toExponential(digits).split("e");
+    return m+"\u00d710"+[...e].map(c=>SUP[c]||"").join("");
+  }
+  function fmtProb(p){
+    if(!(p>0)) return "~0%";
+    const pc = p*100;
+    if(pc>=10)   return pc.toFixed(1)+"%";
+    if(pc>=1)    return pc.toFixed(2)+"%";
+    if(pc>=0.01) return pc.toFixed(3)+"%";
+    if(pc>=1e-6) return pc.toPrecision(2)+"%";
+    return sci(pc,1)+"%";
+  }
+  // Mean spacing between occurrences. Both climates share one unit so the two
+  // numbers can be read against each other; the longer wait picks it.
+  function waitPair(pa, pb){
+    const da = pa>0 ? 1/pa : Infinity, db = pb>0 ? 1/pb : Infinity;
+    const longest = Math.max(isFinite(da)?da:0, isFinite(db)?db:0);
+    const unit = longest < 1096 ? "days" : "years";   // switch once ~3 years is in play
+    const k = unit==="days" ? 1 : 365.25;
+    return {unit, a: da/k, b: db/k};
+  }
+  function fmtNum(v){
+    if(!isFinite(v)) return "\u221e";
+    if(v < 1)     return v.toPrecision(2);
+    if(v < 10)    return v.toFixed(1);
+    if(v < 10000) return Math.round(v).toLocaleString();
+    if(v < 1e6)   return (v/1000).toPrecision(3)+"k";
+    return sci(v,1);
+  }
+  function fmtRatio(r){
+    if(!isFinite(r))  return "∞";
+    if(r === 0)       return "0×";
+    if(r < 0.01)      return r.toPrecision(2)+"×";
+    if(r < 10)        return r.toFixed(2)+"×";
+    if(r < 1000)      return r.toFixed(0)+"×";
+    if(r < 1e6)       return (r/1000).toPrecision(3)+"k×";
+    return sci(r,1)+"\u00d7";
+  }
+
+  const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const $ = id => document.getElementById(id);
+  const sTarget = $('target'), sShift = $('shift');
+  const BW = 0.1;   // fixed half-width of the band, °C
+
+  function draw(){
+    const target = +sTarget.value, shift = +sShift.value;
+    const mu1 = MU0 + shift;
+    const lo = target - BW, hi = target + BW;
+
+    // ---- readouts ----
+    const p0 = bandProb(lo, hi, MU0), p1 = bandProb(lo, hi, mu1);
+    const ratio = p0>0 ? p1/p0 : Infinity;
+    const warmer = ratio >= 1;
+
+    $('targetVal').textContent = target.toFixed(1)+" °C";
+    $('shiftVal').textContent  = "+"+shift.toFixed(2)+" °C";
+    $('pPresent').textContent  = fmtProb(p0);
+    $('pFuture').textContent   = fmtProb(p1);
+    const band = "of days fall within ±"+BW+" °C of "+target.toFixed(1)+" °C";
+    $('rPresent').textContent  = band;
+    $('rFuture').textContent   = band;
+
+    const flat = Math.abs(ratio-1) < 0.005;
+    $('ratio').textContent   = shift===0 ? "1.00× (no warming)" : fmtRatio(ratio);
+    $('ratio').style.color   = (shift===0||flat) ? "" : (warmer ? css('--accent') : css('--cool'));
+    $('ratioK').textContent  = shift===0 ? "Change in likelihood"
+      : flat ? "Unchanged" : (warmer ? "More likely by" : "Less likely by");
+    $('ratioNote').textContent = shift===0 ? "the two climates are identical"
+      : flat ? "this is the break-even temperature — exactly as common as today"
+      : (warmer ? "days at this temperature become more common"
+                : "days at this temperature become rarer");
+    const wp = waitPair(p0, p1);
+    $('cmpT').textContent = target.toFixed(1)+" °C";
+    $('w0v').textContent = fmtNum(wp.a);  $('w0u').textContent = " "+wp.unit;
+    $('w1v').textContent = fmtNum(wp.b);  $('w1u').textContent = " "+wp.unit;
+
+    // ---- canvas setup ----
+    const dpr = window.devicePixelRatio || 1;
+    const w = cv.clientWidth, h = cv.clientHeight;
+    cv.width = Math.round(w*dpr); cv.height = Math.round(h*dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,w,h);
+
+    const inkC=css('--ink'), mutedC=css('--muted'), gridC=css('--grid'),
+          pC=css('--present'), fC=css('--future'),
+          pF=css('--present-fill'), fF=css('--future-fill'),
+          aC=css('--accent'), coolC=css('--cool');
+    const hiC = (shift===0 || Math.abs(ratio-1)<0.005) ? mutedC : (warmer ? aC : coolC);
+
+    const M = {l:64, r:22, t:34, b:48};
+    const pw = w-M.l-M.r, ph = h-M.t-M.b;
+    const x0 = MU0 - 4.6*SD, x1 = MU0 + 5 + 4.6*SD;   // fixed axis so the shift is visible
+    const yMax = pdf(MU0,MU0)*1.32;
+    const X = v => M.l + (v-x0)/(x1-x0)*pw;
+    const Y = v => M.t + ph - (v/yMax)*ph;
+
+    // grid + axes
+    ctx.font = '12px ui-sans-serif,-apple-system,Helvetica,Arial,sans-serif';
+    ctx.lineWidth = 1;
+    ctx.textAlign='right'; ctx.textBaseline='middle';
+    for(let v=0; v<=yMax; v+=0.02){
+      const y = Math.round(Y(v))+.5;
+      ctx.strokeStyle = gridC;
+      ctx.beginPath(); ctx.moveTo(M.l,y); ctx.lineTo(M.l+pw,y); ctx.stroke();
+      ctx.fillStyle = mutedC; ctx.fillText(v.toFixed(2), M.l-10, y);
+    }
+    ctx.textAlign='center'; ctx.textBaseline='top';
+    for(let v=Math.ceil(x0/5)*5; v<=x1; v+=5){
+      const x = Math.round(X(v))+.5;
+      ctx.strokeStyle = gridC;
+      ctx.beginPath(); ctx.moveTo(x,M.t); ctx.lineTo(x,M.t+ph); ctx.stroke();
+      ctx.fillStyle = mutedC; ctx.fillText(v+"°", x, M.t+ph+9);
+    }
+    ctx.strokeStyle = css('--line');
+    ctx.beginPath(); ctx.moveTo(M.l,Math.round(Y(0))+.5); ctx.lineTo(M.l+pw,Math.round(Y(0))+.5); ctx.stroke();
+
+    ctx.fillStyle = mutedC; ctx.font='12.5px ui-sans-serif,-apple-system,Helvetica,Arial,sans-serif';
+    ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+    ctx.fillText('Daily temperature (°C)', M.l+pw/2, h-8);
+    ctx.save(); ctx.translate(15, M.t+ph/2); ctx.rotate(-Math.PI/2);
+    ctx.fillText('Probability density', 0, 0); ctx.restore();
+
+    const N = 700, step = (x1-x0)/N;
+    function tracePath(mu, from, to){
+      ctx.beginPath();
+      let first = true;
+      for(let v=from; v<=to+1e-9; v+=step){
+        const px=X(v), py=Y(pdf(v,mu));
+        if(first){ ctx.moveTo(px,py); first=false; } else ctx.lineTo(px,py);
+      }
+      ctx.lineTo(X(to), Y(pdf(to,mu)));
+    }
+    function slab(mu, fill){
+      const a = Math.max(lo,x0), b = Math.min(hi,x1);
+      if(b <= a) return;
+      ctx.beginPath();
+      ctx.moveTo(X(a), Y(0));
+      const s2 = (b-a)/24;
+      for(let v=a; v<=b+1e-9; v+=s2) ctx.lineTo(X(v), Y(pdf(v,mu)));
+      ctx.lineTo(X(b), Y(pdf(b,mu)));
+      ctx.lineTo(X(b), Y(0)); ctx.closePath();
+      ctx.fillStyle = fill; ctx.fill();
+    }
+    function curve(mu, color){
+      tracePath(mu, x0, x1);
+      ctx.strokeStyle = color; ctx.lineWidth = 2.6; ctx.lineJoin='round';
+      ctx.stroke();
+    }
+
+    slab(MU0, pF); slab(mu1, fF);
+    curve(MU0, pC); curve(mu1, fC);
+
+    // target line, density markers, and the gap between them
+    const tx = X(target);
+    if(target>=x0 && target<=x1){
+      const d0 = pdf(target,MU0), d1 = pdf(target,mu1);
+      ctx.strokeStyle=hiC; ctx.lineWidth=2; ctx.setLineDash([6,4]); ctx.globalAlpha=.75;
+      ctx.beginPath(); ctx.moveTo(tx,M.t-6); ctx.lineTo(tx,Y(0)); ctx.stroke();
+      ctx.setLineDash([]); ctx.globalAlpha=1;
+
+      // solid connector spanning the two densities
+      ctx.strokeStyle=hiC; ctx.lineWidth=3;
+      ctx.beginPath(); ctx.moveTo(tx,Y(d0)); ctx.lineTo(tx,Y(d1)); ctx.stroke();
+      [[d0,pC],[d1,fC]].forEach(([d,c])=>{
+        ctx.beginPath(); ctx.arc(tx, Y(d), 5, 0, Math.PI*2);
+        ctx.fillStyle=c; ctx.fill();
+        ctx.strokeStyle=css('--panel'); ctx.lineWidth=2; ctx.stroke();
+      });
+
+      // label pill
+      const lbl = target.toFixed(1)+" °C";
+      ctx.font='bold 12.5px ui-sans-serif,-apple-system,Helvetica,Arial,sans-serif';
+      const lw = ctx.measureText(lbl).width + 14;
+      const lx = Math.min(Math.max(tx-lw/2, M.l), M.l+pw-lw);
+      ctx.fillStyle=hiC;
+      ctx.beginPath(); ctx.roundRect(lx, 4, lw, 20, 5); ctx.fill();
+      ctx.fillStyle='#fff'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(lbl, lx+lw/2, 15);
+
+      // factor annotation, placed beside the connector
+      if(shift>0 && Math.abs(ratio-1) > 0.02){
+        const msg = fmtRatio(ratio)+(warmer ? " as often" : " as often");
+        ctx.font='bold 13px ui-sans-serif,-apple-system,Helvetica,Arial,sans-serif';
+        const mw = ctx.measureText(msg).width;
+        let ax = tx + 12, align='left';
+        if(ax + mw > M.l+pw){ ax = tx - 12; align='right'; }
+        let ay = (Y(d0)+Y(d1))/2 - 6;
+        ay = Math.min(Math.max(ay, M.t+70), M.t+ph-26);
+        ctx.textAlign=align; ctx.textBaseline='alphabetic';
+        ctx.fillStyle=hiC; ctx.fillText(msg, ax, ay);
+        ctx.font='12px ui-sans-serif,-apple-system,Helvetica,Arial,sans-serif';
+        ctx.fillStyle=mutedC;
+        ctx.fillText(warmer ? "as in today's climate" : "of today's frequency", ax, ay+17);
+      }
+    }
+
+    // legend
+    const items=[['Present climate  (mean '+MU0.toFixed(1)+'°)',pC],
+                 ['Future climate  (mean '+mu1.toFixed(1)+'°)',fC]];
+    ctx.font='12.5px ui-sans-serif,-apple-system,Helvetica,Arial,sans-serif';
+    const lwid = Math.max(...items.map(i=>ctx.measureText(i[0]).width))+38;
+    const ly = M.t+6, lx0 = M.l+pw-lwid-10;
+    ctx.fillStyle=css('--panel'); ctx.strokeStyle=css('--line'); ctx.lineWidth=1;
+    ctx.beginPath(); ctx.roundRect(lx0, ly, lwid, 46, 8); ctx.fill(); ctx.stroke();
+    items.forEach((it,i)=>{
+      const yy = ly+15+i*20;
+      ctx.strokeStyle=it[1]; ctx.lineWidth=2.6;
+      ctx.beginPath(); ctx.moveTo(lx0+11,yy); ctx.lineTo(lx0+29,yy); ctx.stroke();
+      ctx.fillStyle=inkC; ctx.textAlign='left'; ctx.textBaseline='middle';
+      ctx.fillText(it[0], lx0+35, yy);
+    });
+  }
+
+  sTarget.addEventListener('input', draw);
+  sShift.addEventListener('input', draw);
+  document.querySelectorAll('.presets button[data-shift]').forEach(b=>{
+    b.addEventListener('click', ()=>{ sShift.value=b.dataset.shift; draw(); });
+  });
+  window.addEventListener('resize', draw);
+  if(window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw);
+  draw();
+})();
+</script>
+</body>
+</html>
